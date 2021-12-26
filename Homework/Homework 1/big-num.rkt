@@ -1,0 +1,263 @@
+#lang racket
+
+;; The big-num data structure is essentially a list of 3 digit numbers.
+
+;; Exporting methods
+(provide big-add big-subtract big-multiply big-power-of pretty-print
+         number->bignum string->bignum bignum? zero-or-one? one-block?)
+
+(define MAX_BLOCK 1000)
+
+;; Contract verifying the datatype of a bignum
+(define (bignum? n)
+  (cond [(not (list? n)) #f]
+        [(not (list-of-ints? n)) #f]
+        [else #t]))
+
+;; Helper contract
+(define (list-of-ints? lst)
+  (cond [(empty? lst) #t]
+        [(integer? (car lst)) (list-of-ints? (cdr lst))]
+        [else #f]))
+
+;; Contract to ensure a number is 0 or 1.
+(define (zero-or-one? n)
+  (match n
+    [0 #t]
+    [1 #t]
+    [_ #f]))
+
+;; Contract to insure a number is an integer in the range of 0-999.
+(define (one-block? n)
+  (and (integer? n)
+       (>= n 0)
+       (< n 1000)))
+
+;; Addition of two big-nums
+(define/contract (big-add x y)
+  (-> bignum? bignum? bignum?)
+  (big-add1 x y 0)
+  )
+
+(define/contract (big-add1 x y co)
+  (-> bignum? bignum? zero-or-one? bignum?)
+  (cond
+    ;; If both lists are empty, the return value is either 0 or the caryover value.
+    [(and (= 0 (length x)) (= 0 (length y)))
+      (if (= co 0) '() (list co))]
+    ;;check if x is empty
+    [(= 0 (length x))  (big-add1 (list co) y 0)]
+    ;;check if y is empty
+    [(= 0 (length y))  (big-add1 x (list co) 0)]
+    ;;Addition
+    ;;check if x + y < 100
+    [(< (+ (car x) (car y))MAX_BLOCK)
+         ;;add x + y; modulo answer for carryover
+         ;;recursive call
+         (cons (modulo(+(car x)(car y) co)MAX_BLOCK)
+               (big-add1 (cdr x) (cdr y) co))
+         ;;add resurcive call
+         (cons (+ (car x) (car y) co) 
+               (big-add1 (cdr x) (cdr y) 0))
+    ]
+    ;;check if x + y > 1000; there will be carryover
+    [else (> (+ (car x) (car y))MAX_BLOCK)
+         ;;recursive call
+         (cons (- (+ (car x) (car y) co) MAX_BLOCK)
+               ;;recursive call with 1 carryover 
+               (big-add1 (cdr x) (cdr y) 1))
+
+    ]
+     
+  )
+)
+
+;; Subtraction of two big-nums
+(define/contract (big-subtract x y)
+  (-> bignum? bignum? bignum?)
+  (let ([lst (big-subtract1 x y 0)])
+    (reverse (strip-leading-zeroes (reverse lst)))
+  ))
+
+(define/contract (strip-leading-zeroes x)
+  (-> bignum? bignum?)
+  (cond
+    [(= 0 (length x)) '(0)]
+    [(= 0 (car x)) (strip-leading-zeroes (cdr x))]
+    [else x]
+    ))
+
+;; NOTE: there are no negative numbers with this implementation,
+;; so 3 - 4 should throw an error.
+(define/contract (big-subtract1 x y borrow)
+  (-> bignum? bignum? zero-or-one? bignum?)
+  (cond
+    ;;both list empty? return empty list
+    [(and (= 0 (length x)) (= 0 (length y))'())]
+    ;;check x empty
+    [(= 0 (length x)) (big-subtract1 (list borrow) y 0)]
+    ;;check y empty
+    [(= 0 (length y)) (big-subtract1 x (list borrow) 0)]
+    ;;first negative condition; x - y
+    [(< (length x) (length y)) (error "computes negative num")]
+    ;;second negative condition
+    ;;list length should be same but diff value; check value 
+    [(< (list-ref x (- (length x) 1)) (list-ref y (- (length y) 1)))(error "computes negative num")]
+    ;;check if subtraction is < 0
+    [else (if (< (- (car x) (car y)) 0)
+           ;;will do borrow
+          (cons (modulo(-(car x)(car y)borrow)MAX_BLOCK)
+               (big-subtract1 (cdr x) (cdr y) 1))
+          
+          ;;subtract recursive call    
+          (cons (- (car x) (car y) borrow)
+                    (big-subtract1 (cdr x) (cdr y) borrow)))
+    ]
+    )
+ )
+;; Returns true if two big-nums are equal
+(define/contract (big-eq x y)
+  (-> bignum? bignum? boolean?)
+
+  (cond
+    ;;Base Conditions
+    ;;Both numbers are 0 or empty
+    [(and (empty? x)(empty? y))#t]
+    ;;Both number lengths are the same
+    [(= (length x) (length y))
+      ;;first of both nums are the same
+      (if (= (car x) (car y))
+          ;;recusrive call
+        (big-eq (cdr x) (cdr y))#f)]
+
+    ;;if != (car x) (car y) or != (length x) (length y)
+    [else #f]
+   )
+)
+
+;; Decrements a bignum
+(define/contract (big-dec x)
+  (-> bignum? bignum?)
+  (big-subtract x '(1))
+  )
+
+;; Multiplies two big-nums
+(define/contract (big-multiply x y)
+  (-> bignum? bignum? bignum?)
+  (cond
+    ;;Base Conditions
+    ((= (car x) 1) y)
+    ((= (car y) 1) x)
+    (else
+     ;recursive multiply
+        ;;(+x (big-multiply x (- y 1)))
+        (big-add x (big-multiply x (big-dec y)))
+     )
+   )
+  
+  ;; Follow the same approach that you learned in
+  ;; grade school for multiplying numbers, except
+  ;; that a "block" is 0-999, instead of 0-9.
+  ;; Consider creating a helper function that multiplies
+  ;; a big-number with a integer in the range of 0-999.
+  ;; Once you have that working, you can use it in your
+  ;; solution here.
+)
+
+;; Raise x to the power of y
+(define/contract (big-power-of x y)
+  (-> bignum? bignum? bignum?)
+  (cond
+    ;;Base Conditions
+    ;;since x^y; y = 1 return x
+    ((= (car y) 0) 1)
+    ((= (car y) 1) x)
+    (else
+     ;recursive multiply
+        ;;(* x (big-power-of x (- y 1)))
+        (big-multiply x (big-power-of x (big-dec y)))
+     )
+   )
+  
+  ;; Solve this function in terms of big-multiply. 
+  )
+
+;; Dispaly a big-num in an easy to read format
+(define (pretty-print x)
+  (let ([lst (reverse x)])
+    (string-append
+     (number->string (car lst))
+     (pretty-print1 (cdr lst))
+     )))
+
+(define (pretty-print1 x)
+  (cond
+    [(= 0 (length x))  ""]
+    [else
+     (string-append (pretty-print-block (car x)) (pretty-print1 (cdr x)))]
+    ))
+
+(define (pretty-print-block x)
+  (string-append
+   ","
+   (cond
+     [(< x 10) "00"]
+     [(< x 100) "0"]
+     [else ""])
+   (number->string x)))
+
+;; Convert a number to a bignum
+(define/contract (number->bignum n)
+  (-> number? bignum?)
+  (cond
+    [(< n MAX_BLOCK) (list n)]
+    [else
+     (let ([block (modulo n MAX_BLOCK)]
+           [rest (floor (/ n MAX_BLOCK))])
+       (cons block (number->bignum rest)))]))
+
+;; Convert a string to a bignum
+(define/contract (string->bignum s)
+  (-> string? bignum?)
+  (let ([n (string->number s)])
+    (number->bignum n)))
+
+
+;Test Cases
+;(big-eq '(0) '(0))
+;(big-eq '(3) '(4))
+;(big-eq '(100) '(99))
+;(big-eq '(999) '(1000))
+
+;; 999 + 456
+(big-add '(999) '(456))
+;; 1,999 + 1,456
+(big-add '(999 1) '(456 1))
+;; 681,234,999 + 456
+(big-add '(999 234 681) '(456))
+;; 456 + 681,234,999
+(big-add '(456) '(999 234 681))
+;; 681,000,999 + 456
+(big-add '(999 0 681) '(456))
+
+;; 999 - 456
+(big-subtract '(999) '(456))
+;; 1,000 - 1
+(big-subtract '(0 1) '(1))
+;; 9,643,291 - 8,329
+(big-subtract '(291 643 9) '(329 8))
+;; 999,999 - 999,998
+(big-subtract '(999 999) '(998 999))
+;; 999,999 - 999,999
+(big-subtract '(999 999) '(999 999))
+
+
+;; 3 * 4
+(big-multiply '(3) '(4))
+;; 999 * 999
+(big-multiply '(999) '(999))
+;; 999 * 999,999
+(big-multiply '(999) '(999 999))
+;; 456,123 * 21,869,422,789
+(big-multiply '(123 456) '(789 422 869 21))
+(big-power-of '(2) '(8))
